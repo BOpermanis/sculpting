@@ -19,10 +19,10 @@ obj_reader = rc.WavefrontReader(obj_filename)
 
 # Create Mesh
 torus = obj_reader.get_mesh("Torus", position=(-1, 0, -1.5), scale=.4)
-pprint(dir(torus))
-print(type(torus))
-
-exit()
+# monkey = obj_reader.get_mesh("Monkey", dynamic=True)
+verts = torus.vertices
+# print(verts)
+# exit()
 # Create Scene
 scene = rc.Scene(meshes=[torus])
 scene.bgColor = 1, 0, 0
@@ -40,6 +40,10 @@ t = mp.Process(target=worker, args=(frame_queue,))
 t.start()
 # Functions to Run in Event Loop
 def rotate_meshes(dt):
+    verts = torus.vertices
+    for v in verts:
+        v /= 2.0
+    # print(verts.shape, type(verts), verts[0] )
     torus.rotation.x += 80 * dt
 
 def export_frame(dt):
