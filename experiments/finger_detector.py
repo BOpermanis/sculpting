@@ -1,37 +1,48 @@
 import numpy as np
 import cv2
-from utils import numpy_avg_pathches
+from experiments.hand_segmentation_floodfill import HandSegmentator
 
 
-class HandSegmentator:
-    def __init__(self):
+class FingerDetector:
+    def __init__(self, flag_3d=False):
+        self.hand_segmentator = HandSegmentator()
         self.h = 480
         self.w = 640
+        self.flag_3d = flag_3d
         self.window = 4
         assert self.h % self.window == 0 and self.w % self.window == 0
         self.h1 = self.h // self.window
         self.w1 = self.w // self.window
 
     def predict(self, rgb, depth):
-        depth = depth.astype(np.float32)
-        assert rgb.shape[:2] == (self.h, self.w)
-        depth[depth == 0] = np.nan
+        handmask = self.hand_segmentator.predict(rgb, depth)
 
-        avg = numpy_avg_pathches(depth, self.h1, self.w1)
-        avg[np.isnan(avg)] = 255.0
-        ih0, iw0 = np.unravel_index(avg.argmin(), avg.shape)
-        m = avg.min()
-        dists = np.abs(avg - m)
-        d = 10
-        cv2.floodFill(dists, mask=None, seedPoint=(iw0, ih0), newVal=0.0, loDiff=d, upDiff=d)
-        dists = cv2.resize(dists, (self.w, self.h))
-        return dists == 0
+        ys, xs = np.where(handmask)
+        if len(ys) > 0:
+            y_tresh = 40
+            x_tresh = 20
+            i0 = np.argmin(xs)
+            y1, x1 = ys[i0], xs[i0]
+            y2, x2 = y1, x1
+            dx = np.abs(xs - x1)
+            dy = np.abs(ys - y1)
+            mask_second = np.logical_and(
+                dy > y_tresh,
+                dx < x_tresh
+            )
+            if np.any(mask_second):
+                i2 = np.argmin(xs[mask_second])
+                y2, x2 = ys[mask_second][i2], xs[mask_second][i2]
+
+            return handmask, (y1, x1), (y2, x2)
+
+        return handmask, (0, 0), (0, 0)
 
 
 if __name__ == "__main__":
     import pyrealsense2 as rs
 
-    hand_segmentator = HandSegmentator()
+    finger_detector = FingerDetector()
     pipeline = rs.pipeline()
     config = rs.config()
     config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
@@ -45,7 +56,7 @@ if __name__ == "__main__":
         color_frame = frames.get_color_frame()
         return np.asanyarray(color_frame.get_data()), np.asanyarray(depth_frame.get_data())
 
-    green = np.zeros((hand_segmentator.h, hand_segmentator.w, 3), np.uint8)
+    green = np.zeros((finger_detector.h, finger_detector.w, 3), np.uint8)
     green[:, :, 1] = 255
 
     def overlay(rgb, mask):
@@ -56,14 +67,17 @@ if __name__ == "__main__":
         depth = (depth / 56).astype(np.uint8)
         depth[depth != 0] += 50
 
-        mask = hand_segmentator.predict(rgb, depth)
+        mask, (y1, x1), (y2, x2) = finger_detector.predict(rgb, depth)
         depth = cv2.cvtColor(depth, cv2.COLOR_GRAY2BGR)
         overlay(rgb, mask)
         overlay(depth, mask)
 
+        cv2.circle(depth, (x1, y1), 1, (255, 0, 0), 10)
+        cv2.circle(depth, (x2, y2), 1, (255, 0, 0), 10)
+
         # frame = np.concatenate([rgb, depth], axis=1)
         frame = depth
-        cv2.imshow('video', frame)
+        cv2.imshow('video', cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         if cv2.waitKey(10) == 27:
             break
 

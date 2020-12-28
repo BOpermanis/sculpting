@@ -1,4 +1,51 @@
 import numpy as np
+from filterpy.kalman import KalmanFilter
+
+
+def setup_KF(x, y, z=None):
+    flag_2d = z is None
+    if flag_2d:
+        kf = KalmanFilter(dim_x=4, dim_z=2)
+        kf.F = np.array([
+            [1, 0, 1, 0],
+            [0, 1, 0, 1],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+
+        ])
+
+        kf.H = np.array([
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+        ])
+        kf.x[0] = x
+        kf.x[1] = y
+    else:
+        kf = KalmanFilter(dim_x=6, dim_z=3)
+        kf.F = np.array([
+            [1, 0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 1],
+            [0, 0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 1, 0],
+            [0, 0, 0, 0, 0, 1]
+        ])
+
+        kf.H = np.array([
+            [1, 0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0, 0],
+        ])
+        kf.x[0] = x
+        kf.x[1] = y
+        kf.x[2] = z
+        # kf.R[2:, 2:] *= 10.
+        # kf.P[4:, 4:] *= 1000.  # give high uncertainty to the unobservable initial velocities
+        # kf.P *= 10.
+        # kf.Q[-1, -1] *= 0.01
+        # kf.Q[4:, 4:] *= 0.01
+    return kf
+
 
 def is_legit_pixel(ih, iw, h, w):
     if ih < 0 or ih > h - 1 or iw < 0 or iw > w - 1:
