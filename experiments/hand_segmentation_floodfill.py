@@ -1,52 +1,34 @@
 import numpy as np
 import cv2
-from utils import circle_iterator
+from utils import numpy_avg_pathches
+
 class HandSegmentator:
     def __init__(self):
         self.h = 480
         self.w = 640
-        self.window = 32
+        self.window = 4
         assert self.h % self.window == 0 and self.w % self.window == 0
         self.h1 = self.h // self.window
         self.w1 = self.w // self.window
 
     def predict(self, rgb, depth):
+        depth = depth.astype(np.float32)
         assert rgb.shape[:2] == (self.h, self.w)
-        mask = np.ones((self.h1, self.w1), np.float32) * 255
-        mask1 = np.zeros((self.h1, self.w1), np.uint8)
-        closest_inds = None
-        best_val = 255
-        for ih in range(0, self.h1):
-            for iw in range(0, self.w1):
-                ah, bh = ih * self.window, (ih + 1) * self.window
-                aw, bw = iw * self.window, (iw + 1) * self.window
-                mask2 = depth[ah:bh, aw:bw] > 0
-                if np.any(mask2):
-                    mask[ih, iw] = np.average(depth[ah:bh, aw:bw][mask2])
-                    if mask[ih, iw] < best_val:
-                        closest_inds = (ih, iw)
-                        best_val = mask[ih, iw]
+        depth[depth == 0] = np.nan
 
-        dist_max = 10
-        flag_has_close_in_cycle = True
-        r0 = 0
-        mask1[closest_inds[0], closest_inds[1]] = 1
-        for r, (ih, iw) in circle_iterator(closest_inds[0], closest_inds[1], self.h1, self.w1, max(self.h1, self.w1)):
+        avg = numpy_avg_pathches(depth, self.h1, self.w1)
+        avg[np.isnan(avg)] = 255.0
+        # avg = cv2.resize(depth, (self.w1, self.h1), interpolation=cv2.INTER_LINEAR)
+        ih0, iw0 = np.unravel_index(avg.argmin(), avg.shape)
+        m = avg.min()
+        dists = np.abs(avg - m)
+        # print(np.sum(dists))
+        d = 10
+        cv2.floodFill(dists, mask=None, seedPoint=(iw0, ih0), newVal=0, loDiff=d, upDiff=d)
+        # print(np.sum(dists))
+        dists = cv2.resize(dists, (self.w, self.h))
+        return dists == 0
 
-            # new cycle
-            if r0 != r:
-                if not flag_has_close_in_cycle:
-                    break
-                r0 = r
-                flag_has_close_in_cycle = False
-
-            if abs(mask[ih, iw] - best_val) < dist_max:
-                flag_has_close_in_cycle = True
-                mask1[ih, iw] = 1
-
-        mask1 = cv2.resize(mask1, (self.w, self.h))
-
-        return np.stack([mask1]*3, axis=2).astype(np.bool)
 
 if __name__ == "__main__":
     import pyrealsense2 as rs
