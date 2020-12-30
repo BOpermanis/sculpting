@@ -1,6 +1,19 @@
 import numpy as np
 from filterpy.kalman import KalmanFilter
 
+def to_homo(arr):
+    return np.concatenate([arr, np.ones((arr.shape[0], 1))], axis=1)
+
+def from_homo(arr):
+    return arr[:, :-1] / arr[:, -1:]
+
+def project_to_camera(pts3d, R, K):
+    a = np.matmul(R, to_homo(pts3d).T)
+    a = np.matmul(K, a)
+    a = from_homo(a.T)
+    return a
+
+
 
 def setup_KF(x, y, z=None):
     flag_2d = z is None
@@ -44,6 +57,8 @@ def setup_KF(x, y, z=None):
         # kf.P *= 10.
         # kf.Q[-1, -1] *= 0.01
         # kf.Q[4:, 4:] *= 0.01
+    kf.B = np.eye(kf.dim_u)
+    kf.get_pred = lambda: np.dot(kf.F, kf.x)
     return kf
 
 
