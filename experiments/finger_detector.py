@@ -40,21 +40,9 @@ class FingerDetector:
 
 
 if __name__ == "__main__":
-    import pyrealsense2 as rs
+    from camera import RsCamera
 
     finger_detector = FingerDetector()
-    pipeline = rs.pipeline()
-    config = rs.config()
-    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-    pipeline.start(config)
-
-    def get_frame():
-        # Wait for a coherent pair of frames: depth and color
-        frames = pipeline.wait_for_frames()
-        depth_frame = frames.get_depth_frame()
-        color_frame = frames.get_color_frame()
-        return np.asanyarray(color_frame.get_data()), np.asanyarray(depth_frame.get_data())
 
     green = np.zeros((finger_detector.h, finger_detector.w, 3), np.uint8)
     green[:, :, 1] = 255
@@ -62,8 +50,12 @@ if __name__ == "__main__":
     def overlay(rgb, mask):
         rgb[mask] = rgb[mask] // 2 + green[mask] // 2
 
+    camera = RsCamera()
     while True:
-        rgb, depth = get_frame()
+        frame = camera.get()
+        rgb = frame.rgb
+        depth = frame.depth
+
         depth = (depth / 56).astype(np.uint8)
         depth[depth != 0] += 50
 

@@ -110,6 +110,19 @@ def numpy_avg_pathches(img, h1, w1):
     img = np.nanmean(img, (1, 3))
     return img
 
+
+def normalize_t_shape(t):
+    if len(t.shape) > 1:
+        return t[:, 0]
+    else:
+        return t
+
+
+def int2orb(i):
+    np.random.seed(i)
+    return np.random.randint(256, size=32).astype(np.uint8)
+
+
 if __name__ == "__main__":
     from itertools import permutations
 
