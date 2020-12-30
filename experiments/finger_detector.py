@@ -55,11 +55,15 @@ if __name__ == "__main__":
         frame = camera.get()
         rgb = frame.rgb
         depth = frame.depth
-
         depth = (depth / 56).astype(np.uint8)
         depth[depth != 0] += 50
 
         mask, (y1, x1), (y2, x2) = finger_detector.predict(rgb, depth)
+        kp_arr = np.array([(x1, y1), (x2, y2)]) # x un y ir otraadaak
+        fingers_3d = camera.convert_depth_frame_to_pointcloud(depth, kp_arr)
+        xs, ys, zs = zip(*fingers_3d)
+
+
         depth = cv2.cvtColor(depth, cv2.COLOR_GRAY2BGR)
         overlay(rgb, mask)
         overlay(depth, mask)
