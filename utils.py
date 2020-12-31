@@ -13,8 +13,6 @@ def project_to_camera(pts3d, R, K):
     a = from_homo(a.T)
     return a
 
-
-
 def setup_KF(x, y, z=None):
     flag_2d = z is None
     if flag_2d:

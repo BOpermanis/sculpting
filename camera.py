@@ -5,7 +5,7 @@ from utils import normalize_t_shape, int2orb
 
 class Frame:
     cnt = 0
-    def __init__(self, rgb, cloud, depth, kp=None, des=None, cloud_kp=None, kp_arr=None):
+    def __init__(self, rgb, cloud, depth, kp=None, des=None, cloud_kp=None, kp_arr=None, **kwargs):
         self.rgb = rgb
         self.cloud = cloud
         self.depth = depth
@@ -23,7 +23,8 @@ class Frame:
         self.des2mp = None
         self.flag_global_set = False
         self.see_vector = np.asarray((0.0, 0.0, 1.0))
-
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
     def transform2global(self, R, t, prev_cloud_kp=None, new_inds_for_old=None, log=None):
         # assert not self.flag_global_set
@@ -83,18 +84,21 @@ class RsCamera:
         self.f = (self.fx + self.fy) / 2
         self.principal_point = self.cx, self.cy
 
-    def convert_depth_frame_to_pointcloud(self, depth_image, kp_arr=None):
+    def convert_depth_frame_to_pointcloud(self, depth_image, kp_arr=None, w_target=None, h_target=None):
+        height, width = depth_image.shape
         if self.u is None:
-            height, width = depth_image.shape
+            if w_target is None:
+                h_target, w_target = height, width
             self.u, self.v = np.meshgrid(
-                np.linspace(0, width - 1, width, dtype=np.int16),
-                np.linspace(0, height - 1, height, dtype=np.int16))
+                np.linspace(0, w_target - 1, width, dtype=np.int16),
+                np.linspace(0, h_target - 1, height, dtype=np.int16))
             self.u = self.u.flatten()
             self.v = self.v.flatten()
 
             self.x = (self.u - self.intr.ppx) / self.intr.fx
             self.y = (self.v - self.intr.ppy) / self.intr.fy
 
+        # print(depth_image.shape, width, w_target)
         z = depth_image.flatten() / 1000
         x = np.multiply(self.x, z)
         y = np.multiply(self.y, z)
@@ -105,20 +109,11 @@ class RsCamera:
         if kp_arr is not None:
             if len(kp_arr) == 0:
                 return points3d_all[mask], []
-            # set_kp_arr = {*[tuple(_) for _ in kp_arr]}
-            # inds0 = np.where(np.asarray([tuple(a) in set_kp_arr for a in zip(self.u, self.v)]))[0]
-            # print(inds0.shape, len(set_kp_arr))
-            # inds1 = kp_arr[:, 0] * self.width + kp_arr[:, 1]
-            # inds2 = kp_arr[:, 0] * self.height + kp_arr[:, 1]
-            inds_kp = kp_arr[:, 1] * self.width + kp_arr[:, 0]
-            # inds4 = kp_arr[:, 1] * self.height + kp_arr[:, 0]
-            #
-            # print(set(inds0) == set(inds1))
-            # print(set(inds0) == set(inds2))
-            # print(set(inds0) == set(inds_kp))
-            # print(set(inds0) == set(inds4))
-            # exit()
-            # mask_kps = None
+            if w_target != width:
+                kp_arr[:, 0] = width * kp_arr[:, 0] / w_target
+                kp_arr[:, 1] = height * kp_arr[:, 1] / h_target
+                kp_arr = kp_arr.astype(int)
+            inds_kp = kp_arr[:, 1] * width + kp_arr[:, 0]
             return points3d_all[mask], points3d_all[inds_kp]
 
         return points3d_all[mask, :]
@@ -155,12 +150,13 @@ class RsCamera:
                 kp_arr = np.empty((0, 2))
                 des = np.empty((0, ))
 
-        cloud = self.convert_depth_frame_to_pointcloud(depth_image, kp_arr)
+        cloud = None
+        # cloud = self.convert_depth_frame_to_pointcloud(depth_image, kp_arr)
 
         if self.flag_return_with_features != 0 and isinstance(cloud, tuple):
             return Frame(frame, cloud[0], kp, des, cloud[1], kp_arr)
 
-        return Frame(frame, cloud, depth_image)
+        return Frame(frame, cloud, depth_image, K=self.cam_mat)
 
 
 if __name__ == "__main__":

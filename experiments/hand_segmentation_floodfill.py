@@ -10,6 +10,7 @@ class HandSegmentator:
         assert self.h % self.window == 0 and self.w % self.window == 0
         self.h1 = self.h // self.window
         self.w1 = self.w // self.window
+        self.depth_avg = None
 
     def predict(self, rgb, depth):
         depth = depth.astype(np.float32)
@@ -17,6 +18,10 @@ class HandSegmentator:
         depth[depth == 0] = np.nan
 
         avg = numpy_avg_pathches(depth, self.h1, self.w1)
+        if self.depth_avg is None:
+            self.depth_avg = avg
+        else:
+            np.copyto(self.depth_avg, avg)
         avg[np.isnan(avg)] = 255.0
         ih0, iw0 = np.unravel_index(avg.argmin(), avg.shape)
         m = avg.min()
@@ -31,8 +36,6 @@ if __name__ == "__main__":
     from camera import RsCamera
 
     hand_segmentator = HandSegmentator()
-
-
     green = np.zeros((hand_segmentator.h, hand_segmentator.w, 3), np.uint8)
     green[:, :, 1] = 255
 
