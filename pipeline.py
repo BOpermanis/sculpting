@@ -8,12 +8,12 @@ from pprint import pprint
 import cv2
 import multiprocessing as mp
 from camera import Frame
-from utils import from_homo
+from utils import from_homo, initialize_transformation_chessboard2mesh, to_homo
 
 def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
     from camera import RsCamera
     from experiments.finger_detector import FingerDetector
-    from utils import setup_KF, project_to_camera
+    from utils import setup_KF, project_to_camera, plane_from_pts3d
 
     camera = RsCamera(flag_return_with_features=2)
     finger_detector = FingerDetector()
@@ -26,10 +26,17 @@ def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
         frame = camera.get()
         rgb = frame.rgb
         depth = frame.depth
-        depth = (depth / 56).astype(np.uint8)
-        depth[depth != 0] += 50
+        # depth = (depth / 56).astype(np.uint8)
+        # depth[depth != 0] += 50
 
-        hand_mask, (y1, x1), (y2, x2) = finger_detector.predict(rgb, depth)
+        plane_fun = None
+        if frame.kp_arr is not None:
+            if isinstance(frame.cloud_kp, np.ndarray):
+                plane_fun = plane_from_pts3d(frame.cloud_kp)
+                for kp in frame.kp_arr:
+                    cv2.circle(depth, tuple(kp), 3, (0, 255, 0))
+
+        hand_mask, (y1, x1), (y2, x2) = finger_detector.predict(rgb, depth, plane_fun=plane_fun, K=frame.K)
         fingers_3d = None
         if np.average(hand_mask) < 0.3:
             kp_arr = np.array([(x1, y1), (x2, y2)]) # x un y ir otraadaak
@@ -66,7 +73,7 @@ def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
             # frame.finger2[0, 2] = -1.5
             frame.hand_mask = hand_mask
 
-        if renderer_feedback_queue.qsize() > 0:
+        if True: #renderer_feedback_queue.qsize() > 0:
             frame_queue.put(frame)
             renderer_feedback_queue.get()
 
@@ -168,8 +175,9 @@ for thread in threads:
     thread.start()
 
 
+P = np.zeros((4, 4))
 def deform_mesh(dt):
-    global frame_queue, render_queue, renderer_feedback_queue
+    global frame_queue, render_queue, renderer_feedback_queue, P
 
     frame = frame_queue.get()
 
@@ -178,10 +186,19 @@ def deform_mesh(dt):
         if tuple(frame.finger1.flatten()) == tuple(frame.finger2.flatten()):
             flag_pinch = True
 
+    if isinstance(frame.cloud_kp, np.ndarray):
+        if frame.cloud_kp.shape[0] == 48 and P[0, 0] == 0.0:
+            P1 = initialize_transformation_chessboard2mesh(frame)
+            if P1 is not None:
+                np.copyto(P, P1)
 
-    if flag_pinch:
+    if flag_pinch and P[0, 0] != 0.0:
         # x0, y0, z0 = mesh.position
-        x, y, z = frame.finger1.flatten()
+        f1 = from_homo(np.matmul(to_homo(frame.finger1), P))
+        # f2 = from_homo(np.matmul(to_homo(frame.finger2), P))
+
+        x, y, z = f1[0, :]
+        print(f1)
         z = - z * 20
         # print(mesh.position, (x, y, z))
         # mesh.position = (x, y, z)

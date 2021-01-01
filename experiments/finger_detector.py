@@ -64,6 +64,10 @@ if __name__ == "__main__":
         plane_fun = None
         if frame.kp_arr is not None:
             if isinstance(frame.cloud_kp, np.ndarray):
+                # import pickle
+                # with open("/home/slam_data/temp.pickle", "wb") as conn:
+                #     pickle.dump(frame, conn)
+                # exit()
                 plane_fun = plane_from_pts3d(frame.cloud_kp)
                 for kp in frame.kp_arr:
                     cv2.circle(depth, tuple(kp), 3, (0, 255, 0))

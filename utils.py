@@ -1,12 +1,49 @@
 import numpy as np
 from filterpy.kalman import KalmanFilter
 from sklearn.linear_model import LinearRegression
+from scipy.spatial import distance_matrix
+import warnings
 
 def to_homo(arr):
     return np.concatenate([arr, np.ones((arr.shape[0], 1))], axis=1)
 
 def from_homo(arr):
     return arr[:, :-1] / arr[:, -1:]
+
+def initialize_transformation_chessboard2mesh(frame, flag_return_intermediate_results=False):
+
+    scale = 0.3
+    scale_half = scale / 2.0
+    x_center, y_center, z_center = 0, -0.5, -1.5
+
+    dists = distance_matrix(frame.cloud_kp, frame.cloud_kp)
+    inds = np.argsort(-dists.flatten())
+
+    # stuuru indeksi
+    ind_corners, _ = np.unravel_index(inds[:4], dists.shape)
+    a1, a2, b1, b2 = ind_corners
+    r = (dists[a1, b1] + dists[a2, b2]) / (dists[a1, b2] + dists[a2, b1])
+    if r < 1.0:
+        r = 1 / r
+
+    target_corners = np.asarray([
+        (x_center - scale_half, y_center, z_center - scale_half * r), # a1
+        (x_center - scale_half, y_center, z_center + scale_half * r), # a2
+        (x_center + scale_half, y_center, z_center + scale_half * r), # b1
+        (x_center + scale_half, y_center, z_center - scale_half * r), # b2
+    ])
+
+    corners = frame.cloud_kp[ind_corners, :]
+
+    # ax = b, taatad no chessboard to mesh
+    try:
+        P = np.linalg.solve(to_homo(corners), to_homo(target_corners))
+    except np.linalg.LinAlgError:
+        P = None
+
+    if flag_return_intermediate_results:
+        return P, ind_corners, r
+    return P
 
 def project_to_camera(pts3d, R, K):
     a = np.matmul(R, to_homo(pts3d).T)
@@ -121,7 +158,9 @@ def numpy_avg_pathches(img, h1, w1):
     assert h % h1 == 0 and w % w1 == 0 and h // h1 == w // w1
     window = h // h1
     img = np.reshape(img, (h1, window, w1, window))
-    img = np.nanmean(img, (1, 3))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        img = np.nanmean(img, (1, 3))
     return img
 
 
@@ -140,13 +179,6 @@ def plane_from_pts3d(pts3d):
     lr = LinearRegression()
     lr.fit(pts3d[:, (0, 2)], pts3d[:, 1])
     return lr.predict
-
-def get_desk_plane_mask(frame):
-    if frame.cloud_kp is None:
-        return
-
-    plane_fun = plane_from_pts3d(frame.cloud_kp)
-
 
 
 if __name__ == "__main__":
