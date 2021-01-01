@@ -15,7 +15,7 @@ def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
     from experiments.finger_detector import FingerDetector
     from utils import setup_KF, project_to_camera
 
-    camera = RsCamera()
+    camera = RsCamera(flag_return_with_features=2)
     finger_detector = FingerDetector()
 
     # setup_KF()
@@ -71,12 +71,13 @@ def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
             renderer_feedback_queue.get()
 
 def worker_visualize(render_queue):
-
+    from time import time
     green = None
     def overlay(rgb, mask, green):
         rgb[mask] = rgb[mask] // 2 + green[mask] // 2
-
+    ts = []
     while True:
+        start = time()
         frame = render_queue.get()
 
         rgb, depth, render = frame.rgb, frame.depth, frame.render
@@ -102,6 +103,11 @@ def worker_visualize(render_queue):
                 cv2.circle(render, (x, y), 1, (255, 0, 0), 10)
 
         cv2.imshow('video', cv2.cvtColor(render, cv2.COLOR_RGB2BGR))
+        ts.append(time() - start)
+        if len(ts) > 10:
+            ts.pop(0)
+            if frame.id % 10 == 0:
+                print("{}) fps={}".format(frame.id, 1 / np.average(ts)))
         if cv2.waitKey(10) == 27:
             break
 
@@ -177,7 +183,7 @@ def deform_mesh(dt):
         # x0, y0, z0 = mesh.position
         x, y, z = frame.finger1.flatten()
         z = - z * 20
-        print(mesh.position, (x, y, z))
+        # print(mesh.position, (x, y, z))
         # mesh.position = (x, y, z)
         # verts = mesh.vertices
         # for v in verts:

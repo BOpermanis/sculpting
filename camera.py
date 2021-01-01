@@ -65,12 +65,17 @@ class RsCamera:
         config = rs.config()
         config.enable_stream(rs.stream.depth, self.width, self.height, rs.format.z16, 30)
         config.enable_stream(rs.stream.color, self.width, self.height, rs.format.bgr8, 30)
+        config.enable_stream(rs.stream.infrared, 1, self.width, self.height, rs.format.y8, 30)
+        # config.enable_stream(rs.stream.infrared, 2, self.width, self.height, rs.format.y8, 30)
         cfg = self.pipeline.start(config)
         profile = cfg.get_stream(rs.stream.depth)  # Fetch stream profile for depth stream
         self.intr = profile.as_video_stream_profile().get_intrinsics()
 
-        self.u = None
-        self.v = None
+        self.u = {}
+        self.v = {}
+        self.x = {}
+        self.y = {}
+
         self.cam_mat = np.asarray([
             [self.intr.fx, 0, self.intr.ppx],
             [0, self.intr.fy, self.intr.ppy],
@@ -86,22 +91,24 @@ class RsCamera:
 
     def convert_depth_frame_to_pointcloud(self, depth_image, kp_arr=None, w_target=None, h_target=None):
         height, width = depth_image.shape
-        if self.u is None:
-            if w_target is None:
-                h_target, w_target = height, width
-            self.u, self.v = np.meshgrid(
+        if w_target is None:
+            h_target, w_target = height, width
+        key = (height, width)
+
+        if key not in self.u:
+            self.u[key], self.v[key] = np.meshgrid(
                 np.linspace(0, w_target - 1, width, dtype=np.int16),
                 np.linspace(0, h_target - 1, height, dtype=np.int16))
-            self.u = self.u.flatten()
-            self.v = self.v.flatten()
+            self.u[key] = self.u[key].flatten()
+            self.v[key] = self.v[key].flatten()
 
-            self.x = (self.u - self.intr.ppx) / self.intr.fx
-            self.y = (self.v - self.intr.ppy) / self.intr.fy
+            self.x[key] = (self.u[key] - self.intr.ppx) / self.intr.fx
+            self.y[key] = (self.v[key] - self.intr.ppy) / self.intr.fy
 
         # print(depth_image.shape, width, w_target)
         z = depth_image.flatten() / 1000
-        x = np.multiply(self.x, z)
-        y = np.multiply(self.y, z)
+        x = np.multiply(self.x[key], z)
+        y = np.multiply(self.y[key], z)
         mask = np.nonzero(z)
 
         points3d_all = np.stack([x, y, z], axis=1)
@@ -123,9 +130,14 @@ class RsCamera:
         frames = self.pipeline.wait_for_frames()
         depth_frame = frames.get_depth_frame()
         color_frame = frames.get_color_frame()
+        infra_frame = frames.get_infrared_frame()
+
         depth_image = np.asanyarray(depth_frame.get_data())
         frame = np.asanyarray(color_frame.get_data())
-
+        infra_frame = np.asanyarray(infra_frame.get_data())
+        infra_frame = cv2.cvtColor(infra_frame, cv2.COLOR_GRAY2BGR)
+        # print(frame.shape, frame.dtype)
+        # exit()
         des, kp_arr, kp = None, None, None
         if self.flag_return_with_features == 1:
             kp, des = self.feature_extractor.detectAndCompute(frame, mask=(depth_image > 0).astype(np.uint8) * 255)
@@ -150,13 +162,13 @@ class RsCamera:
                 kp_arr = np.empty((0, 2))
                 des = np.empty((0, ))
 
-        cloud = None
-        # cloud = self.convert_depth_frame_to_pointcloud(depth_image, kp_arr)
+        cloud = self.convert_depth_frame_to_pointcloud(depth_image, kp_arr)
 
         if self.flag_return_with_features != 0 and isinstance(cloud, tuple):
-            return Frame(frame, cloud[0], kp, des, cloud[1], kp_arr)
+            return Frame(frame, cloud[0], depth_image, kp=kp, des=des, cloud_kp=cloud[1],
+                         kp_arr=kp_arr, infra=infra_frame, K=self.cam_mat)
 
-        return Frame(frame, cloud, depth_image, K=self.cam_mat)
+        return Frame(frame, cloud, depth_image, K=self.cam_mat, infra=infra_frame)
 
 
 if __name__ == "__main__":
@@ -173,10 +185,11 @@ if __name__ == "__main__":
         # plt.show()
         # exit()
         # print(frame.rgb_frame.shape, frame.rgb_frame.dtype, np.min(frame.rgb_frame), np.max(frame.rgb_frame))
-        print(frame.kp_arr.shape)
+        # print(frame.kp_arr.shape)
         # print(frame.des.shape, frame.des.dtype)
-        for kp in frame.kp_arr:
-            cv2.circle(frame.rgb_frame, tuple(kp), 3, (0, 255, 0))
-        cv2.imshow('my webcam', frame.rgb_frame)
+        if frame.kp_arr is not None:
+            for kp in frame.kp_arr:
+                cv2.circle(frame.rgb, tuple(kp), 3, (0, 255, 0))
+        cv2.imshow('my webcam', frame.rgb)
         if cv2.waitKey(1) == 27:
             break  # esc to quit

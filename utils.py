@@ -1,5 +1,6 @@
 import numpy as np
 from filterpy.kalman import KalmanFilter
+from sklearn.linear_model import LinearRegression
 
 def to_homo(arr):
     return np.concatenate([arr, np.ones((arr.shape[0], 1))], axis=1)
@@ -134,6 +135,18 @@ def normalize_t_shape(t):
 def int2orb(i):
     np.random.seed(i)
     return np.random.randint(256, size=32).astype(np.uint8)
+
+def plane_from_pts3d(pts3d):
+    lr = LinearRegression()
+    lr.fit(pts3d[:, (0, 2)], pts3d[:, 1])
+    return lr.predict
+
+def get_desk_plane_mask(frame):
+    if frame.cloud_kp is None:
+        return
+
+    plane_fun = plane_from_pts3d(frame.cloud_kp)
+
 
 
 if __name__ == "__main__":
