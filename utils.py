@@ -1,8 +1,19 @@
 import numpy as np
+import cv2
 from filterpy.kalman import KalmanFilter
 from sklearn.linear_model import LinearRegression
 from scipy.spatial import distance_matrix
 import warnings
+from itertools import product
+
+width_perfect = 640
+height_perfect = 480
+
+K_perfect = np.array([
+    [width_perfect, 0, width_perfect / 2],
+    [0, height_perfect, height_perfect / 2],
+    [0, 0, 1]
+])
 
 def to_homo(arr):
     return np.concatenate([arr, np.ones((arr.shape[0], 1))], axis=1)
@@ -179,6 +190,22 @@ def plane_from_pts3d(pts3d):
     lr = LinearRegression()
     lr.fit(pts3d[:, (0, 2)], pts3d[:, 1])
     return lr.predict
+
+def generate_chessboard_in_camera_space():
+    r = 0.75
+    s = 0.5
+    s2 = s / 2
+    x, y, z = 0.0, -0.5, -1.5
+    return product(np.linspace(x - s2, x + s2, num=8), [y], np.linspace(z - s2, z + s2, num=6))
+
+def pts2d_from_render(img):
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    ret, img = cv2.threshold(img, 127, 255, 0)
+    *_, contours, hierarchy = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    pts = []
+    for c in contours:
+        pts.append(np.average(c[:, 0, :], axis=0))
+    return pts
 
 
 if __name__ == "__main__":
