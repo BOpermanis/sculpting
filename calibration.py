@@ -8,7 +8,7 @@ from pprint import pprint
 import cv2
 import multiprocessing as mp
 from camera import Frame
-from utils import from_homo, initialize_transformation_chessboard2mesh, to_homo, generate_chessboard_in_camera_space
+from utils import from_homo, initialize_transformation_chessboard2mesh, to_homo, generate_chessboard_in_camera_space, pts2d_from_render
 
 
 def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
@@ -141,27 +141,11 @@ print(obj_reader.bodies.keys())
 # exit()
 # Create Mesh
 
-
-r = 0.75
-s = 0.5
-s2 = s / 2
-# x, y, z
-x, y, z = 0.0, -0.5, -1.5
-corners = [
-    (x - s2, y, z - s2 * r),
-    (x - s2, y, z + s2 * r),
-    (x + s2, y, z + s2 * r),
-    (x + s2, y, z - s2 * r),
-]
-
 # pprint(dir(mesh))
 # exit()
-# monkey = obj_reader.get_mesh("Monkey", dynamic=True)
-meshes = []
-for x, y, z in generate_chessboard_in_camera_space():
-    meshes.append(obj_reader.get_mesh("Sphere", position=(x, y, z), scale=0.01))
+mesh = obj_reader.get_mesh("Sphere", position=(0.0, 0.0, -1.5), scale=0.01)
 
-scene = rc.Scene(meshes=meshes)
+scene = rc.Scene(meshes=[mesh])
 scene.bgColor = 1, 0, 0
 # from camera import RsCamera
 # cam = RsCamera()
@@ -193,8 +177,12 @@ for thread in threads:
 
 
 P = np.zeros((4, 4))
+centers = list(generate_chessboard_in_camera_space())
+calibrartion_renders = []
+nr_render = 0
+
 def deform_mesh(dt):
-    global frame_queue, render_queue, renderer_feedback_queue, P
+    global frame_queue, render_queue, renderer_feedback_queue, P, calibrartion_renders, nr_render
 
     frame = frame_queue.get()
 
@@ -203,24 +191,39 @@ def deform_mesh(dt):
         if tuple(frame.finger1.flatten()) == tuple(frame.finger2.flatten()):
             flag_pinch = True
 
+    flag_ok_chessboard = False
+    if isinstance(frame.cloud_kp, np.ndarray):
+        flag_ok_chessboard = frame.cloud_kp.shape[0] == 48
+
+    flag_save_render = nr_render > 5 and len(centers) > 0
+
+    if flag_save_render:
+        x, y, z = centers.pop(0)
+        mesh.position = x, y, z
+
     render = glReadPixels(0, 0, 640, 480, GL_RGB, GL_FLOAT)
     render = np.frombuffer(render, np.float32)
     render = (render.reshape((480, 640, 3)) * 255).astype(np.uint8)
     render = cv2.cvtColor(render, cv2.COLOR_BGR2RGB)
     render = np.flipud(render)
 
-    if isinstance(frame.cloud_kp, np.ndarray):
-        if frame.cloud_kp.shape[0] == 48:
-            import pickle
-            with open("/home/slam_data/four_points_render.pickle", "wb") as conn:
-                pickle.dump((render, frame), conn)
-            print("saved !!!")
-            exit()
+    pt = pts2d_from_render(render)
 
+    if len(pt) > 0:
+        if np.linalg.norm(np.asarray(pt) - np.asarray((320, 240))) > 5:
+            calibrartion_renders.append(render)
+    # print("len(calibrartion_renders)", len(calibrartion_renders), pt)
 
     frame.render = render
     render_queue.put(frame)
     renderer_feedback_queue.put(0)
+
+    if len(calibrartion_renders) == 48 and flag_ok_chessboard:
+        import pickle
+        with open("/home/slam_data/four_points_render.pickle", "wb") as conn:
+            pickle.dump((calibrartion_renders, frame), conn)
+        print("saved !!!")
+    nr_render += 1
 
 pyglet.clock.schedule(deform_mesh)
 

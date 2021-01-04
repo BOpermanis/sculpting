@@ -3,6 +3,7 @@ import cv2
 from filterpy.kalman import KalmanFilter
 from sklearn.linear_model import LinearRegression
 from scipy.spatial import distance_matrix
+from scipy.optimize import linear_sum_assignment
 import warnings
 from itertools import product
 
@@ -197,6 +198,13 @@ def generate_chessboard_in_camera_space():
     s2 = s / 2
     x, y, z = 0.0, -0.5, -1.5
     return product(np.linspace(x - s2, x + s2, num=8), [y], np.linspace(z - s2, z + s2, num=6))
+    # zs, ys, xs = zip(*list(product(np.linspace(z - s2, z + s2, num=6), [y], np.linspace(x - s2, x + s2, num=8))))
+    # return zip(xs, ys, zs)
+
+
+# l = list(generate_chessboard_in_camera_space())
+# print(len(l), len(set(l)))
+# exit()
 
 def pts2d_from_render(img):
     img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -206,6 +214,100 @@ def pts2d_from_render(img):
     for c in contours:
         pts.append(np.average(c[:, 0, :], axis=0))
     return pts
+
+
+
+def get_diagonal_points(pts):
+    dists = distance_matrix(pts, pts)
+    indsa, indsb = np.unravel_index(np.argsort(-dists.flatten())[:4], dists.shape)
+
+    pairs = set()
+    for a, b in zip(indsa, indsb):
+        if a > b:
+            pairs.add((a, b))
+        else:
+            pairs.add((b, a))
+
+    pairs = list(pairs)
+    a1, a2 = pairs[0]
+    b1, b2 = pairs[1]
+    # print(pairs)
+    # print(np.unravel_index(np.argsort(-dists.flatten())[:4], dists.shape))
+    # print(np.sort(-dists.flatten())[:5])
+    # print(a1, a2, b1, b2)
+    # import matplotlib.pyplot as plt
+    # print(len(set([tuple(a) for a in pts])))
+    # plt.scatter(pts[:, 0], pts[:, 2])
+    # plt.scatter(pts[a1, 0], pts[a1, 2], c="red")
+    # plt.scatter(pts[a2, 0], pts[a2, 2], c="red")
+    # plt.scatter(pts[b1, 0], pts[b1, 2], c="green")
+    # plt.scatter(pts[b2, 0], pts[b2, 2], c="green")
+    # plt.show()
+    # exit()
+    g1 = np.linalg.norm(pts[a1] - pts[b1]) + np.linalg.norm(pts[b2] - pts[a2])
+    g2 = np.linalg.norm(pts[a1] - pts[b2]) + np.linalg.norm(pts[b1] - pts[a2])
+
+    # (.., ..), (.., ..) - paari veido garaakaas malas (abaam malaam ir viens un tas pats virziens)
+    if g1 > g2:
+        a1, a2, b1, b2 = a1, b1, b2, a2
+    else:
+        a1, a2, b1, b2 = a1, b2, b1, a2
+
+    # taisnstuura virzieni
+    vec_major = ((pts[a1, :] - pts[a2, :]) + (pts[b1, :] - pts[b2, :])) / 2
+    vec_minor = ((pts[a1, :] - pts[b1, :]) + (pts[a2, :] - pts[b2, :])) / 2
+
+    return vec_major, vec_minor
+
+
+def get_chess2render_transformation(calibrartion_renders, frame):
+    pts2d = []
+    pts3d = []
+    for render, (x, y, z) in zip(calibrartion_renders, generate_chessboard_in_camera_space()):
+        pts2d.extend(pts2d_from_render(render))
+        pts3d.append((x, y, z))
+    pts3d = np.array(pts3d)
+    pts2d = np.array(pts2d)
+
+    x = frame.cloud_kp.copy()
+
+    # balstoties uz taisnstuura gjeometrikajaam iipashiibaam
+    vec_render_major, vec_render_minor = get_diagonal_points(pts3d)
+    vec_chess_major, vec_chess_minor = get_diagonal_points(x)
+
+    v_render = np.cross(vec_render_major, vec_render_minor)
+    v_chess = np.cross(vec_chess_major, vec_chess_minor)
+
+    m_render = np.stack([vec_render_major, vec_render_minor, v_render])
+    m_chess = np.stack([vec_chess_major, vec_chess_minor, v_chess])
+
+    T1 = np.linalg.solve(m_chess, m_render)
+    x = np.matmul(frame.cloud_kp, T1)
+
+    # nodibinu 1:1 attieciibas
+    dist_mat = distance_matrix(x, pts3d)
+    row_ind, col_ind = linear_sum_assignment(dist_mat)
+    indices = col_ind
+
+    # apreekjinu preciizaaku transformaaciju izmantojot visus taisnstuura punktus
+    lr = LinearRegression(fit_intercept=False)
+    lr.fit(to_homo(x), to_homo(pts3d[indices, :]))
+    # lr.fit(x, pts3d[indices, :])
+
+    # x = np.matmul(x, lr.coef_)
+    # plt.scatter(x[:, 0], x[:, 2])
+    # plt.scatter(pts3d[:, 0], pts3d[:, 2], c="red")
+    # plt.show()
+    # exit()
+
+    # T2 = np.eye(4)
+    # T2[:3, :3] = lr.coef_.T
+
+    T = np.eye(4)
+    T[:3, :3] = T1
+    # T[:3, 3] = t
+    T = np.matmul(T, lr.coef_.T)
+    return T
 
 
 if __name__ == "__main__":

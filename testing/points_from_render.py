@@ -2,32 +2,26 @@ import pickle
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from utils import from_homo, to_homo, pts2d_from_render, generate_chessboard_in_camera_space, K_perfect
+from utils import from_homo, to_homo, pts2d_from_render, generate_chessboard_in_camera_space, K_perfect, get_diagonal_points, get_chess2render_transformation
 
 
 def check():
     with open("/home/slam_data/four_points_render.pickle", "rb") as conn:
-        calibrartion_renders = pickle.load(conn)
+        calibrartion_renders, frame = pickle.load(conn)
 
-    pts2d = []
-    pts3d = []
-    for render, (x, y, z) in zip(calibrartion_renders, generate_chessboard_in_camera_space()):
-        pts2d.extend(pts2d_from_render(render))
-        pts3d.append((x, y, z))
+    T = get_chess2render_transformation(calibrartion_renders, frame)
+    pts3d = np.array(list(generate_chessboard_in_camera_space()))
 
-    pts3d = np.array(pts3d)
-    pts2d = np.array(pts2d)
-    print(pts3d.shape)
-    print(pts2d.shape)
-    (is_ok, rotation_vector, translation_vector) = cv2.solvePnP(pts3d, pts2d, K_perfect, np.zeros((4, 1)))
-    R = cv2.Rodrigues(rotation_vector)[0]
+    A = frame.cloud_kp
+    B = pts3d
 
-    print(R)
-    print(is_ok, rotation_vector, translation_vector)
-    print(pts3d.shape)
-    print(pts2d.shape)
+    A = to_homo(A)
 
+    A = from_homo(np.matmul(A, T))
 
+    plt.scatter(A[:, 0], A[:, 2])
+    plt.scatter(B[:, 0], B[:, 2], c="red")
+    plt.show()
 
 
 if __name__ == "__main__":
