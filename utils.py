@@ -219,14 +219,21 @@ def pts2d_from_render(img):
 
 def get_diagonal_points(pts):
     dists = distance_matrix(pts, pts)
-    indsa, indsb = np.unravel_index(np.argsort(-dists.flatten())[:4], dists.shape)
+    indsa, indsb = np.unravel_index(np.argsort(-dists.flatten()), dists.shape)
 
     pairs = set()
+    unique_corners = set()
     for a, b in zip(indsa, indsb):
-        if a > b:
-            pairs.add((a, b))
-        else:
-            pairs.add((b, a))
+        if a not in unique_corners and b not in unique_corners:
+            if a > b:
+                pairs.add((a, b))
+            else:
+                pairs.add((b, a))
+            unique_corners.add(a)
+            unique_corners.add(b)
+
+        if len(pairs) == 2:
+            break
 
     pairs = list(pairs)
     a1, a2 = pairs[0]
@@ -257,7 +264,7 @@ def get_diagonal_points(pts):
     vec_major = ((pts[a1, :] - pts[a2, :]) + (pts[b1, :] - pts[b2, :])) / 2
     vec_minor = ((pts[a1, :] - pts[b1, :]) + (pts[a2, :] - pts[b2, :])) / 2
 
-    return vec_major, vec_minor
+    return vec_major, vec_minor, [a1, a2, b1, b2]
 
 
 def get_chess2render_transformation(calibrartion_renders, frame):
@@ -272,17 +279,43 @@ def get_chess2render_transformation(calibrartion_renders, frame):
     x = frame.cloud_kp.copy()
 
     # balstoties uz taisnstuura gjeometrikajaam iipashiibaam
-    vec_render_major, vec_render_minor = get_diagonal_points(pts3d)
-    vec_chess_major, vec_chess_minor = get_diagonal_points(x)
+    vec_render_major, vec_render_minor, inds_render = get_diagonal_points(pts3d)
+    vec_chess_major, vec_chess_minor, inds_chess = get_diagonal_points(x)
 
+    # import matplotlib.pyplot as plt
+    # plt.scatter(pts3d[:, 0], pts3d[:, 2])
+    # plt.scatter(x[:, 0], x[:, 2], c="red")
+    # plt.show()
+    # exit()
+
+    # exit()
     v_render = np.cross(vec_render_major, vec_render_minor)
     v_chess = np.cross(vec_chess_major, vec_chess_minor)
 
-    m_render = np.stack([vec_render_major, vec_render_minor, v_render])
-    m_chess = np.stack([vec_chess_major, vec_chess_minor, v_chess])
+    if np.dot(vec_render_major, vec_chess_major) > 0.0:
+        # vec_chess_major *= -1.0
+        inds_render = inds_render[2:] + inds_render[:2]
 
-    T1 = np.linalg.solve(m_chess, m_render)
-    x = np.matmul(frame.cloud_kp, T1)
+    if np.dot(vec_chess_major, vec_chess_minor) > 0.0:
+        vals = inds_render[1], inds_render[3]
+        inds_render[1] = inds_render[0]
+        inds_render[3] = inds_render[2]
+        inds_render[0] = vals[0]
+        inds_render[2] = vals[1]
+        # inds_render = inds_render[2:] + inds_render[:2]
+
+    print(np.round(to_homo(x[inds_chess, :]), 2))
+    print(np.round(to_homo(pts3d[inds_render, :]), 2))
+    T = np.linalg.solve(to_homo(x[inds_chess, :]), to_homo(pts3d[inds_render, :]))
+
+    x = from_homo(np.matmul(to_homo(x), T))
+
+    # print(np.round(T, 2))
+    # import matplotlib.pyplot as plt
+    # plt.scatter(x[:, 0], x[:, 2])
+    # plt.scatter(pts3d[:, 0], pts3d[:, 2], c="red")
+    # plt.show()
+    # exit()
 
     # nodibinu 1:1 attieciibas
     dist_mat = distance_matrix(x, pts3d)
@@ -291,10 +324,11 @@ def get_chess2render_transformation(calibrartion_renders, frame):
 
     # apreekjinu preciizaaku transformaaciju izmantojot visus taisnstuura punktus
     lr = LinearRegression(fit_intercept=False)
-    lr.fit(to_homo(x), to_homo(pts3d[indices, :]))
+    lr.fit(to_homo(x), pts3d[indices, :])
     # lr.fit(x, pts3d[indices, :])
 
-    # x = np.matmul(x, lr.coef_)
+    # x = np.matmul(to_homo(x), lr.coef_.T)
+    # import matplotlib.pyplot as plt
     # plt.scatter(x[:, 0], x[:, 2])
     # plt.scatter(pts3d[:, 0], pts3d[:, 2], c="red")
     # plt.show()
@@ -303,10 +337,17 @@ def get_chess2render_transformation(calibrartion_renders, frame):
     # T2 = np.eye(4)
     # T2[:3, :3] = lr.coef_.T
 
-    T = np.eye(4)
-    T[:3, :3] = T1
-    # T[:3, 3] = t
-    T = np.matmul(T, lr.coef_.T)
+    T2 = np.eye(4)
+    T2[:3, :] = lr.coef_
+    # T[:3, 3] = -t1
+    #
+    # T3 = np.eye(4)
+    # T3[:3, 3] = t2
+
+    T = np.matmul(T, T2.T)
+    # T = np.matmul(T, T3.T)
+
+    print(np.round(T, 2))
     return T
 
 

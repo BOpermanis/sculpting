@@ -8,7 +8,7 @@ from pprint import pprint
 import cv2
 import multiprocessing as mp
 from camera import Frame
-from utils import from_homo, initialize_transformation_chessboard2mesh, to_homo
+from utils import from_homo, initialize_transformation_chessboard2mesh, to_homo, generate_chessboard_in_camera_space, pts2d_from_render, get_chess2render_transformation
 
 def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
     from camera import RsCamera
@@ -86,6 +86,7 @@ def worker_visualize(render_queue):
     while True:
         start = time()
         frame = render_queue.get()
+        continue
 
         rgb, depth, render = frame.rgb, frame.depth, frame.render
         if green is None:
@@ -138,7 +139,7 @@ obj_reader = rc.WavefrontReader(obj_filename)
 print(obj_reader.bodies.keys())
 # exit()
 # Create Mesh
-mesh = obj_reader.get_mesh("Sphere", position=(0, 0, -1.5), scale=0.05)
+mesh = obj_reader.get_mesh("Sphere", position=(0, 0, -1.5), scale=0.01)
 # pprint(dir(mesh))
 # exit()
 # monkey = obj_reader.get_mesh("Monkey", dynamic=True)
@@ -175,9 +176,15 @@ for thread in threads:
     thread.start()
 
 
-P = np.zeros((4, 4))
+flag_calibrated = False
+centers = list(generate_chessboard_in_camera_space())
+calibrartion_renders = []
+nr_render = 0
+
+T_chess2render = np.eye(4)
+
 def deform_mesh(dt):
-    global frame_queue, render_queue, renderer_feedback_queue, P
+    global frame_queue, render_queue, renderer_feedback_queue, flag_calibrated, nr_render, T_chess2render
 
     frame = frame_queue.get()
 
@@ -186,33 +193,61 @@ def deform_mesh(dt):
         if tuple(frame.finger1.flatten()) == tuple(frame.finger2.flatten()):
             flag_pinch = True
 
-    if isinstance(frame.cloud_kp, np.ndarray):
-        if frame.cloud_kp.shape[0] == 48 and P[0, 0] == 0.0:
-            P1 = initialize_transformation_chessboard2mesh(frame)
-            if P1 is not None:
-                np.copyto(P, P1)
+    if flag_calibrated:
+        if flag_pinch:
+            # x0, y0, z0 = mesh.position
+            f1 = frame.finger1
+            # f2 = from_homo(np.matmul(to_homo(frame.finger2), P))
 
-    if flag_pinch and P[0, 0] != 0.0:
-        # x0, y0, z0 = mesh.position
-        f1 = from_homo(np.matmul(to_homo(frame.finger1), P))
-        # f2 = from_homo(np.matmul(to_homo(frame.finger2), P))
+            x, y, z = f1[0, :]
+            print(f1)
+            z = - z * 20
+            # print(mesh.position, (x, y, z))
+            # mesh.position = (x, y, z)
+            # verts = mesh.vertices
+            # for v in verts:
+            #     pass
 
-        x, y, z = f1[0, :]
-        print(f1)
-        z = - z * 20
-        # print(mesh.position, (x, y, z))
-        # mesh.position = (x, y, z)
-        # verts = mesh.vertices
-        # for v in verts:
-        #     pass
-    mesh.rotation.x += 80 * dt
+        render = glReadPixels(0, 0, 640, 480, GL_RGB, GL_FLOAT)
+        render = np.frombuffer(render, np.float32)
+        render = (render.reshape((480, 640, 3)) * 255).astype(np.uint8)
+        render = cv2.cvtColor(render, cv2.COLOR_BGR2RGB)
+        render = np.flipud(render)
 
-    render = glReadPixels(0, 0, 640, 480, GL_RGB, GL_FLOAT)
-    render = np.frombuffer(render, np.float32)
-    render = (render.reshape((480, 640, 3)) * 255).astype(np.uint8)
-    render = cv2.cvtColor(render, cv2.COLOR_BGR2RGB)
-    render = np.flipud(render)
+    else:
+        flag_ok_chessboard = False
+        if isinstance(frame.cloud_kp, np.ndarray):
+            flag_ok_chessboard = frame.cloud_kp.shape[0] == 48
 
+        flag_save_render = nr_render > 5 and len(centers) > 0
+
+        if flag_save_render:
+            x, y, z = centers.pop(0)
+            mesh.position = x, y, z
+
+        render = glReadPixels(0, 0, 640, 480, GL_RGB, GL_FLOAT)
+        render = np.frombuffer(render, np.float32)
+        render = (render.reshape((480, 640, 3)) * 255).astype(np.uint8)
+        render = cv2.cvtColor(render, cv2.COLOR_BGR2RGB)
+        render = np.flipud(render)
+
+        pt = pts2d_from_render(render)
+        if len(pt) > 0:
+            if np.linalg.norm(np.asarray(pt) - np.asarray((320, 240))) > 5:
+                calibrartion_renders.append(render)
+                # print("len(calibrartion_renders)", len(calibrartion_renders), pt)
+
+        if isinstance(frame.cloud_kp, np.ndarray):
+            flag_ok_chessboard = frame.cloud_kp.shape[0] == 48
+
+        if len(calibrartion_renders) == 48 and flag_ok_chessboard:
+            # import pickle
+            # with open("/home/slam_data/four_points_render1.pickle", "wb") as conn:
+            #     pickle.dump((calibrartion_renders, frame), conn)
+            T = get_chess2render_transformation(calibrartion_renders, frame)
+            np.copyto(T_chess2render, T)
+
+    nr_render += 1
     frame.render = render
     render_queue.put(frame)
     renderer_feedback_queue.put(0)

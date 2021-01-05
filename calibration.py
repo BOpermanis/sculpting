@@ -208,7 +208,6 @@ def deform_mesh(dt):
     render = np.flipud(render)
 
     pt = pts2d_from_render(render)
-
     if len(pt) > 0:
         if np.linalg.norm(np.asarray(pt) - np.asarray((320, 240))) > 5:
             calibrartion_renders.append(render)

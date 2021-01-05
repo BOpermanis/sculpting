@@ -6,7 +6,10 @@ from utils import from_homo, to_homo, pts2d_from_render, generate_chessboard_in_
 
 
 def check():
-    with open("/home/slam_data/four_points_render.pickle", "rb") as conn:
+    # with open("/home/slam_data/four_points_render.pickle", "rb") as conn:
+    #     calibrartion_renders, frame = pickle.load(conn)
+
+    with open("/home/slam_data/four_points_render1.pickle", "rb") as conn:
         calibrartion_renders, frame = pickle.load(conn)
 
     T = get_chess2render_transformation(calibrartion_renders, frame)
