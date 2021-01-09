@@ -238,7 +238,6 @@ def get_diagonal_points(pts):
     pairs = list(pairs)
     a1, a2 = pairs[0]
     b1, b2 = pairs[1]
-    # print(pairs)
     # print(np.unravel_index(np.argsort(-dists.flatten())[:4], dists.shape))
     # print(np.sort(-dists.flatten())[:5])
     # print(a1, a2, b1, b2)
@@ -251,33 +250,32 @@ def get_diagonal_points(pts):
     # plt.scatter(pts[b2, 0], pts[b2, 2], c="green")
     # plt.show()
     # exit()
-    g1 = np.linalg.norm(pts[a1] - pts[b1]) + np.linalg.norm(pts[b2] - pts[a2])
-    g2 = np.linalg.norm(pts[a1] - pts[b2]) + np.linalg.norm(pts[b1] - pts[a2])
 
+    g1 = np.linalg.norm(pts[a1] - pts[b1]) + np.linalg.norm(pts[b2] - pts[a2])
+    g2 = np.linalg.norm(pts[a1] - pts[a2]) + np.linalg.norm(pts[b1] - pts[b2])
     # (.., ..), (.., ..) - paari veido garaakaas malas (abaam malaam ir viens un tas pats virziens)
     if g1 > g2:
         a1, a2, b1, b2 = a1, b1, b2, a2
-    else:
-        a1, a2, b1, b2 = a1, b2, b1, a2
 
     # taisnstuura virzieni
     vec_major = ((pts[a1, :] - pts[a2, :]) + (pts[b1, :] - pts[b2, :])) / 2
     vec_minor = ((pts[a1, :] - pts[b1, :]) + (pts[a2, :] - pts[b2, :])) / 2
+    # print(np.dot(vec_minor, vec_major))
+    # print(vec_minor, vec_major)
+    # exit()
 
     return vec_major, vec_minor, [a1, a2, b1, b2]
 
 
-def get_chess2render_transformation(calibrartion_renders, frame):
-    pts2d = []
-    pts3d = []
-    for render, (x, y, z) in zip(calibrartion_renders, generate_chessboard_in_camera_space()):
-        pts2d.extend(pts2d_from_render(render))
-        pts3d.append((x, y, z))
-    pts3d = np.array(pts3d)
-    pts2d = np.array(pts2d)
+def get_lr_coefs(X, Y):
+    # apreekjinu preciizaaku transformaaciju izmantojot visus taisnstuura punktus
+    lr = LinearRegression(fit_intercept=False)
+    lr.fit(to_homo(X), Y)
+    T = np.eye(4)
+    T[:, :3] = lr.coef_.T
+    return T
 
-    x = frame.cloud_kp.copy()
-
+def get_chess2render_transformation(pts3d, x, log=None):
     # balstoties uz taisnstuura gjeometrikajaam iipashiibaam
     vec_render_major, vec_render_minor, inds_render = get_diagonal_points(pts3d)
     vec_chess_major, vec_chess_minor, inds_chess = get_diagonal_points(x)
@@ -292,63 +290,59 @@ def get_chess2render_transformation(calibrartion_renders, frame):
     v_render = np.cross(vec_render_major, vec_render_minor)
     v_chess = np.cross(vec_chess_major, vec_chess_minor)
 
-    if np.dot(vec_render_major, vec_chess_major) > 0.0:
-        # vec_chess_major *= -1.0
-        inds_render = inds_render[2:] + inds_render[:2]
-
-    if np.dot(vec_chess_major, vec_chess_minor) > 0.0:
-        vals = inds_render[1], inds_render[3]
-        inds_render[1] = inds_render[0]
-        inds_render[3] = inds_render[2]
-        inds_render[0] = vals[0]
-        inds_render[2] = vals[1]
-        # inds_render = inds_render[2:] + inds_render[:2]
-
-    print(np.round(to_homo(x[inds_chess, :]), 2))
-    print(np.round(to_homo(pts3d[inds_render, :]), 2))
-    T = np.linalg.solve(to_homo(x[inds_chess, :]), to_homo(pts3d[inds_render, :]))
-
-    x = from_homo(np.matmul(to_homo(x), T))
-
-    # print(np.round(T, 2))
+    # if np.dot(vec_render_major, vec_chess_major) < 0.0:
+    #     # vec_chess_major *= -1.0
+    #     inds_render = inds_render[2:] + inds_render[:2]
+    #
+    # if np.dot(vec_chess_major, vec_chess_minor) < 0.0:
+    #     vals = inds_render[1], inds_render[3]
+    #     inds_render[1] = inds_render[0]
+    #     inds_render[3] = inds_render[2]
+    #     inds_render[0] = vals[0]
+    #     inds_render[2] = vals[1]
+    #     # inds_render = inds_render[2:] + inds_render[:2]
+    # print(11111, inds_chess, inds_render)
     # import matplotlib.pyplot as plt
+    # # plt.scatter(pts3d[:, 0], pts3d[:, 2])
     # plt.scatter(x[:, 0], x[:, 2])
-    # plt.scatter(pts3d[:, 0], pts3d[:, 2], c="red")
+    # plt.scatter(x[inds_chess[:2], 0], x[inds_chess[:2], 2], c="red")
+    # plt.scatter(x[inds_chess[2:], 0], x[inds_chess[2:], 2], c="green")
+    #
+    # plt.scatter(pts3d[:, 0], pts3d[:, 2])
+    # plt.scatter(pts3d[inds_render[:2], 0], pts3d[inds_render[:2], 2], c="red")
+    # plt.scatter(pts3d[inds_render[2:], 0], pts3d[inds_render[2:], 2], c="green")
+    #
     # plt.show()
     # exit()
+    T1 = get_lr_coefs(x[inds_chess, :].copy(), pts3d[inds_render, :].copy())
+    # x = from_homo(np.matmul(to_homo(x), T1))
+    # import matplotlib.pyplot as plt
+    # plt.scatter(pts3d[:, 0], pts3d[:, 2])
+    # plt.scatter(x[:, 0], x[:, 2], c="red")
+    # plt.show()
+    # exit()
+
 
     # nodibinu 1:1 attieciibas
-    dist_mat = distance_matrix(x, pts3d)
+    dist_mat = distance_matrix(from_homo(np.matmul(to_homo(x), T1)), pts3d)
     row_ind, col_ind = linear_sum_assignment(dist_mat)
     indices = col_ind
+    if log is not None:
+        log['indices'] = indices
 
-    # apreekjinu preciizaaku transformaaciju izmantojot visus taisnstuura punktus
-    lr = LinearRegression(fit_intercept=False)
-    lr.fit(to_homo(x), pts3d[indices, :])
-    # lr.fit(x, pts3d[indices, :])
+    T = get_lr_coefs(x, pts3d[indices, :])
 
-    # x = np.matmul(to_homo(x), lr.coef_.T)
+    # x = from_homo(np.matmul(to_homo(x), T))
     # import matplotlib.pyplot as plt
-    # plt.scatter(x[:, 0], x[:, 2])
-    # plt.scatter(pts3d[:, 0], pts3d[:, 2], c="red")
+    # plt.scatter(pts3d[:, 0], pts3d[:, 2])
+    # plt.scatter(x[:, 0], x[:, 2], c="red")
     # plt.show()
     # exit()
 
-    # T2 = np.eye(4)
-    # T2[:3, :3] = lr.coef_.T
-
-    T2 = np.eye(4)
-    T2[:3, :] = lr.coef_
-    # T[:3, 3] = -t1
-    #
-    # T3 = np.eye(4)
-    # T3[:3, 3] = t2
-
-    T = np.matmul(T, T2.T)
-    # T = np.matmul(T, T3.T)
-
-    print(np.round(T, 2))
-    return T
+    def f(A):
+        assert A.shape[1] == 3 and len(A.shape) == 2
+        return from_homo(np.matmul(to_homo(A), T))
+    return f, T
 
 
 if __name__ == "__main__":

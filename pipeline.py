@@ -10,6 +10,7 @@ import multiprocessing as mp
 from camera import Frame
 from utils import from_homo, initialize_transformation_chessboard2mesh, to_homo, generate_chessboard_in_camera_space, pts2d_from_render, get_chess2render_transformation
 
+
 def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
     from camera import RsCamera
     from experiments.finger_detector import FingerDetector
@@ -77,6 +78,7 @@ def worker_camera(frame_queue, renderer_feedback_queue, proj_mat):
             frame_queue.put(frame)
             renderer_feedback_queue.get()
 
+
 def worker_visualize(render_queue):
     from time import time
     green = None
@@ -86,7 +88,6 @@ def worker_visualize(render_queue):
     while True:
         start = time()
         frame = render_queue.get()
-        continue
 
         rgb, depth, render = frame.rgb, frame.depth, frame.render
         if green is None:
@@ -128,10 +129,6 @@ def worker_monitor(queues):
             s.append("{}:{}".format(k, q.qsize()))
         print(", ".join(s))
         sleep(5)
-
-
-# Create Window and Add Keyboard State Handler to it's Event Loop
-
 
 # Insert filename into WavefrontReader.
 obj_filename = rc.resources.obj_primitives
@@ -196,8 +193,7 @@ def deform_mesh(dt):
     if flag_calibrated:
         if flag_pinch:
             # x0, y0, z0 = mesh.position
-            f1 = frame.finger1
-            # f2 = from_homo(np.matmul(to_homo(frame.finger2), P))
+            f1 = from_homo(np.matmul(to_homo(frame.finger1), T_chess2render))
 
             x, y, z = f1[0, :]
             print(f1)
@@ -207,6 +203,7 @@ def deform_mesh(dt):
             # verts = mesh.vertices
             # for v in verts:
             #     pass
+        mesh.position = 0.0, 0.0, -1.5
 
         render = glReadPixels(0, 0, 640, 480, GL_RGB, GL_FLOAT)
         render = np.frombuffer(render, np.float32)
@@ -241,11 +238,19 @@ def deform_mesh(dt):
             flag_ok_chessboard = frame.cloud_kp.shape[0] == 48
 
         if len(calibrartion_renders) == 48 and flag_ok_chessboard:
-            # import pickle
-            # with open("/home/slam_data/four_points_render1.pickle", "wb") as conn:
-            #     pickle.dump((calibrartion_renders, frame), conn)
-            T = get_chess2render_transformation(calibrartion_renders, frame)
+            import pickle
+            with open("/home/slam_data/four_points_render2.pickle", "wb") as conn:
+                pickle.dump((calibrartion_renders, frame), conn)
+            pts2d = []
+            pts3d = []
+            for render, (x, y, z) in zip(calibrartion_renders, generate_chessboard_in_camera_space()):
+                pts2d.extend(pts2d_from_render(render))
+                pts3d.append((x, y, z))
+            pts3d = np.array(pts3d)
+            pts2d = np.array(pts2d)
+            T = get_chess2render_transformation(pts3d, frame.cloud_kp.copy())
             np.copyto(T_chess2render, T)
+            flag_calibrated = True
 
     nr_render += 1
     frame.render = render

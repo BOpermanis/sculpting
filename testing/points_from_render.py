@@ -12,7 +12,18 @@ def check():
     with open("/home/slam_data/four_points_render1.pickle", "rb") as conn:
         calibrartion_renders, frame = pickle.load(conn)
 
-    T = get_chess2render_transformation(calibrartion_renders, frame)
+    with open("/home/slam_data/four_points_render2.pickle", "rb") as conn:
+        calibrartion_renders, frame = pickle.load(conn)
+
+    pts2d = []
+    pts3d = []
+    for render, (x, y, z) in zip(calibrartion_renders, generate_chessboard_in_camera_space()):
+        pts2d.extend(pts2d_from_render(render))
+        pts3d.append((x, y, z))
+    pts3d = np.array(pts3d)
+    pts2d = np.array(pts2d)
+
+    T = get_chess2render_transformation(pts3d, frame)
     pts3d = np.array(list(generate_chessboard_in_camera_space()))
 
     A = frame.cloud_kp
