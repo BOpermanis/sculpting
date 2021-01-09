@@ -94,8 +94,8 @@ def worker_visualize(render_queue):
             green = np.zeros((rgb.shape[0], rgb.shape[1], 3), np.uint8)
             green[:, :, 1] = 255
 
-        # mask = np.logical_and(render[:, :, 2] == 255, render[:, :, 1] == 0)
-        # render[mask] = rgb[mask]
+        mask = np.logical_and(render[:, :, 2] == 255, render[:, :, 1] == 0)
+        render[mask] = rgb[mask]
         if frame.hand_mask is not None:
             overlay(render, frame.hand_mask, green)
 
@@ -229,7 +229,7 @@ def deform_mesh(dt):
         render = np.flipud(render)
 
         pt = pts2d_from_render(render)
-        if len(pt) > 0:
+        if len(pt) > 0 and len(calibrartion_renders) < 48:
             if np.linalg.norm(np.asarray(pt) - np.asarray((320, 240))) > 5:
                 calibrartion_renders.append(render)
                 # print("len(calibrartion_renders)", len(calibrartion_renders), pt)
@@ -248,9 +248,11 @@ def deform_mesh(dt):
                 pts3d.append((x, y, z))
             pts3d = np.array(pts3d)
             pts2d = np.array(pts2d)
-            T = get_chess2render_transformation(pts3d, frame.cloud_kp.copy())
+            _, T = get_chess2render_transformation(pts3d, frame.cloud_kp.copy())
             np.copyto(T_chess2render, T)
             flag_calibrated = True
+        if frame.id % 10 == 0:
+            print("{}) calibrated: {} ({})".format(frame.id, flag_calibrated, frame.cloud_kp.shape[0] if isinstance(frame.cloud_kp, np.ndarray) else 0))
 
     nr_render += 1
     frame.render = render
