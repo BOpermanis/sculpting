@@ -10,6 +10,7 @@ path = "/home/bruno/shared_with_container/four_points_render2.pickle"
 
 def gen_rigid_trans(seed=0):
     np.random.seed(seed)
+    np.random.seed(3)
     R = np.eye(4)
     r = random_rot.random(random_state=seed).as_matrix()
     for i in range(3):
@@ -72,7 +73,44 @@ def check_multiple():
             print(indices)
             exit()
 
+def check_multiple_2d_transform():
+    with open(path, "rb") as conn:
+        calibrartion_renders, frame = pickle.load(conn)
+
+    np.random.seed(0)
+    pts2d = []
+    pts3d = []
+    for render, (x, y, z) in zip(calibrartion_renders, generate_chessboard_in_camera_space()):
+        pts2d.extend(pts2d_from_render(render))
+        pts3d.append((x, y, z))
+    pts3d = np.array(pts3d)
+    pts2d = np.array(pts2d)
+
+    R = gen_rigid_trans()
+    cloud = from_homo(np.matmul(R, to_homo(pts3d).T).T)
+    # cloud += np.random.normal(0, 1, size=cloud.shape) * 0.005
+    inds = np.random.choice(pts3d.shape[0], pts3d.shape[0], replace=False)
+
+    cloud1 = cloud[inds]
+
+    print(inds)
+    indices = get_chess2render_transformation(cloud1, pts3d)
+
+    # chess 3d -> cam 2d
+
+    is_ok, R, t, inliers = cv2.solvePnPRansac(cloud1,
+                               pts2d[indices, :].astype(np.float64),
+                               K_perfect, np.zeros((4, 1)),
+                               flags=cv2.SOLVEPNP_EPNP)
+    # in not all poitns are inliers, continue matching
+    print(len(inliers) / cloud1.shape[0])
+    R = cv2.Rodrigues(R)[0]
+    print(indices)
+    print(R)
+    exit()
+
 
 if __name__ == "__main__":
     # check()
-    check_multiple()
+    # check_multiple()
+    check_multiple_2d_transform()

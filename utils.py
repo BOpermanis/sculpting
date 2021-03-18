@@ -414,24 +414,6 @@ def get_chess2render_transformation(cloud, pts3d, log=None):
     # v_render = np.cross(vec_render_major, vec_render_minor)
     # v_chess = np.cross(vec_chess_major, vec_chess_minor)
 
-    # from itertools import permutations
-    #
-    # for inds_chess1 in permutations(inds_chess):
-    #     for inds_render1 in permutations(inds_render):
-    #         T1, score = get_lr_coefs(cloud[inds_chess1, :].copy(), pts3d[inds_render1, :].copy())
-    #         # T1, score = get_lr_coefs(pts3d[inds_render1, :].copy(), pts3d[inds_render1, :].copy())
-    #         print(score)
-    #         if score == 0.0:
-    #             s = np.sum(np.abs(T1 - np.eye(4)))
-    #             print(np.round(T1, 2))
-    #             exit()
-    #             print(s)
-    #
-    # print(inds_chess)
-    # print(inds_render)
-    # exit()
-
-
     dist_mat = distance_matrix(cloud[inds_chess, :].copy(), pts3d[inds_render, :].copy())
     row_ind, col_ind = linear_sum_assignment(dist_mat)
 
@@ -441,26 +423,11 @@ def get_chess2render_transformation(cloud, pts3d, log=None):
     T1 = get_lr_coefs(cloud[inds_chess, :].copy(), pts3d[inds_render, :].copy())
     cloud1 = T1.transform(cloud)
 
-
-    # import matplotlib.pyplot as plt
-    # plt.scatter(pts3d[:, 0], pts3d[:, 2])
-    # plt.scatter(cloud1[:, 0], cloud1[:, 2], c="red")
-    # plt.show()
-    # exit()
-
     # nodibinu 1:1 attieciibas
     dist_mat = distance_matrix(cloud1, pts3d)
     row_ind, col_ind = linear_sum_assignment(dist_mat)
     indices = col_ind[row_ind]
 
-    # T = get_lr_coefs(cloud, pts3d[indices, :])
-
-    # x = from_homo(np.matmul(to_homo(x), T))
-    # import matplotlib.pyplot as plt
-    # plt.scatter(pts3d[:, 0], pts3d[:, 2])
-    # plt.scatter(x[:, 0], x[:, 2], c="red")
-    # plt.show()
-    # exit()
     return indices
 
 
