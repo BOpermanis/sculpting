@@ -1,40 +1,45 @@
-# import the necessary modules
-# from PyQt4.QtCore import *  # QTimer
-# from PyQt4.QtGui import *  # QApplication
-# from PyQt4.QtOpenGL import *  # QGLWidget
-from PyQt5.QtCore import *  # QTimer
-from PyQt5.QtGui import QApplication
-from PyQt5.QtOpenGL import *  # QGLWidget
-from OpenGL.GL import *  # OpenGL functionality
-from OpenGL.GL import shaders  # Utilities to compile shaders, we may not actually use this
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LinearRegression
+from utils import get_lr_coefs
 
+a = [[ 0.25, -0.5,  -1.25,  1.  ],
+ [-0.25, -0.5,  -1.75,  1.  ],
+ [ 0.25, -0.5,  -1.75,  1.  ],
+ [-0.25, -0.5,  -1.25,  1.  ]]
+b = [[ 0.25, -0.5,  -1.25,  1.  ],
+ [-0.25, -0.5,  -1.75,  1.  ],
+ [ 0.25, -0.5,  -1.75,  1.  ],
+ [-0.25, -0.5,  -1.25,  1.  ]]
 
-# this is the basic window
-class OpenGLView(QGLWidget):
-    def initializeGL(self):
-        # here openGL is initialized and we can do our real program initialization
-        pass
+a = np.array(a)[:, :3]
+b = np.array(b)[:, :3]
 
+ob = get_lr_coefs(a, b)
 
-def resizeGL(self, width, height):
-    # openGL remembers how many pixels it should draw,
-    # so every resize we have to tell it what the new window size is it is supposed
-    # to be drawing for
-    pass
+print(ob.transform(a))
+print(b)
 
+# pca_a = PCA(n_components=3)
+# pca_b = PCA(n_components=3)
+#
+# a1 = pca_a.fit_transform(a)
+# mask_a_ok = pca_a.explained_variance_ratio_ > 0.000001
+#
+#
+# b1 = pca_b.fit_transform(b)
+# mask_b_ok = pca_b.explained_variance_ratio_ > 0.000001
+#
+# a2 = a1[:, mask_a_ok]
+# b2 = b1[:, mask_b_ok]
+#
+# lr = LinearRegression()
+# lr.fit(a2, b2)
+#
+# pred = lr.predict(pca_a.transform(a)[:, mask_a_ok])
+# pred = np.concatenate([pred, np.zeros((pred.shape[0], 1))], 1)
+# pred = pca_b.inverse_transform(pred)
+# print(pred)
+# print(b)
 
-def paintGL(self):
-    # here we can start drawing, on show and on resize the window will redraw
-    # automatically
-    pass
-
-# this initializes Qt
-app = QApplication([])
-# this creates the openGL window, but it isn't initialized yet
-window = OpenGLView()
-# this only schedules the window to be shown on the next Qt update
-window.show()
-# this starts the Qt main update loop, it avoids python from continuing beyond this
-# line and any Qt stuff we did above is now going to actually get executed, along with
-# any future events like mouse clicks and window resizes
-app.exec_()
+# print(lr.coef_)

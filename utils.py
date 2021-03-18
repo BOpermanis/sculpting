@@ -6,6 +6,7 @@ from scipy.spatial import distance_matrix
 from scipy.optimize import linear_sum_assignment
 import warnings
 from itertools import product
+from sklearn.decomposition import PCA
 
 width_perfect = 640
 height_perfect = 480
@@ -15,6 +16,95 @@ K_perfect = np.array([
     [0, height_perfect, height_perfect / 2],
     [0, 0, 1]
 ])
+
+import numpy as np
+# Input: expects 3xN matrix of points
+# Returns R,t
+# R = 3x3 rotation matrix
+# t = 3x1 column vector
+
+
+class rigid_transform_3D:
+    def __init__(self, R=None, t=None):
+        self.R = R
+        self.t = t
+
+    def get_params(self, *args, **kwargs):
+        return {'R': self.R, "t": self.t}
+
+    def set_params(self, *args, **kwargs):
+        if 'R' in kwargs:
+            self.R = kwargs['R']
+        if 't' in kwargs:
+            self.t = kwargs['t']
+
+    def fit(self, A, B):
+        assert len(A) == len(B)
+
+        A = np.mat(A.copy().T, dtype=np.float64)
+        B = np.mat(B.copy().T, dtype=np.float64)
+
+        num_rows, num_cols = A.shape
+
+        if num_rows != 3:
+            raise Exception("matrix A is not 3xN, it is {}x{}".format(num_rows, num_cols))
+
+        num_rows, num_cols = B.shape
+        if num_rows != 3:
+            raise Exception("matrix B is not 3xN, it is {}x{}".format(num_rows, num_cols))
+
+        # find mean column wise
+        centroid_A = np.mean(A, axis=1)
+        centroid_B = np.mean(B, axis=1)
+
+        # subtract mean
+        if len(centroid_A.shape) == 1:
+            centroid_A = np.expand_dims(centroid_A, 1)
+
+        if len(centroid_B.shape) == 1:
+            centroid_B = np.expand_dims(centroid_B, 1)
+
+        # print("num_cols", num_cols, A.shape, centroid_A.shape, np.tile(centroid_A, (1, num_cols)).shape)
+        # Am = A - tile(centroid_A, (1, num_cols))
+        # Bm = B - tile(centroid_B, (1, num_cols))
+
+        Am = A - centroid_A
+        Bm = B - centroid_B
+
+        # H = matmul(Am, transpose(Bm))
+        H = np.matmul(Am, Bm.T)
+        # H = Am * transpose(Bm)
+
+        # find rotation
+        U, S, Vt = np.linalg.svd(H)
+        R = Vt.T * U.T
+
+        # special reflection case
+        if np.linalg.det(R) < 0:
+            # print("det(R) < 0, reflection detected!, correcting for it ...\n");
+            Vt[2, :] *= -1
+            R = Vt.T * U.T
+
+        # t = -R * centroid_A + centroid_B
+
+        t = -np.matmul(R, centroid_A) + centroid_B
+
+        self.R = R
+        if len(t.shape) == 1:
+            self.t = np.expand_dims(t, 1)
+        else:
+            self.t = t
+
+    def score(self, A, B):
+        pred = self.predict(A)
+        return sum(np.linalg.norm(B - pred, axis=1))
+
+    def predict(self, A):
+        n = A.shape[0]
+        A = A.copy().T
+        # exit()
+        return (np.matmul(self.R, A) + np.tile(self.t, (1, n))).T
+        # return matmul(self.R, A).T + tile(self.t, (1, n))
 
 def to_homo(arr):
     return np.concatenate([arr, np.ones((arr.shape[0], 1))], axis=1)
@@ -267,70 +357,103 @@ def get_diagonal_points(pts):
     return vec_major, vec_minor, [a1, a2, b1, b2]
 
 
-def get_lr_coefs(X, Y):
+def get_lr_coefs_non_singular(X, Y):
     # apreekjinu preciizaaku transformaaciju izmantojot visus taisnstuura punktus
     lr = LinearRegression(fit_intercept=False)
-    lr.fit(to_homo(X), Y)
+    X = to_homo(X)
+    Y = to_homo(Y)
+    lr.fit(X, Y)
     T = np.eye(4)
     T[:, :3] = lr.coef_.T
-    return T
+    return lr.coef_.T, lr.score(X, Y)
+    # return T, np.sum(np.abs(np.eye(4) - T))
 
-def get_chess2render_transformation(pts3d, x, log=None):
-    # balstoties uz taisnstuura gjeometrikajaam iipashiibaam
+class get_lr_coefs:
+    def __init__(self, a, b):
+        a = np.array(a)[:, :3]
+        b = np.array(b)[:, :3]
+
+        self.pca_a = PCA(n_components=3)
+        self.pca_b = PCA(n_components=3)
+
+        self.pca_a.fit(a)
+        # self.pca_a.components_[0, :] *= -1
+
+        self.pca_b.fit(b)
+        # self.pca_b.components_[:, 2] *= -1
+
+        # print(np.round(self.pca_a.components_, 2))
+        # exit()
+        a1 = self.pca_a.transform(a)
+        self.mask_a_ok = self.pca_a.explained_variance_ratio_ > 0.000001
+
+        b1 = self.pca_b.transform(b)
+
+        mask_b_ok = self.pca_b.explained_variance_ratio_ > 0.000001
+
+        a2 = a1[:, self.mask_a_ok]
+        b2 = b1[:, mask_b_ok]
+
+        self.lr = LinearRegression()
+        self.lr.fit(a2, b2)
+        # print(np.round(self.lr.coef_, 2))
+        # print(np.round(self.pca_a.components_, 2))
+        # print(np.round(self.pca_b.components_, 2))
+        # exit()
+
+    def transform(self, a):
+        pred = self.lr.predict(self.pca_a.transform(a)[:, self.mask_a_ok])
+        if pred.shape[1] == 2:
+            pred = np.concatenate([pred, np.zeros((pred.shape[0], 1))], 1)
+        return self.pca_b.inverse_transform(pred)
+
+def get_chess2render_transformation(cloud, pts3d, log=None):
+    # balstoties uz taisnstuura gjeometriskajaam iipashiibaam
     vec_render_major, vec_render_minor, inds_render = get_diagonal_points(pts3d)
-    vec_chess_major, vec_chess_minor, inds_chess = get_diagonal_points(x)
+    vec_chess_major, vec_chess_minor, inds_chess = get_diagonal_points(cloud)
+    # v_render = np.cross(vec_render_major, vec_render_minor)
+    # v_chess = np.cross(vec_chess_major, vec_chess_minor)
+
+    # from itertools import permutations
+    #
+    # for inds_chess1 in permutations(inds_chess):
+    #     for inds_render1 in permutations(inds_render):
+    #         T1, score = get_lr_coefs(cloud[inds_chess1, :].copy(), pts3d[inds_render1, :].copy())
+    #         # T1, score = get_lr_coefs(pts3d[inds_render1, :].copy(), pts3d[inds_render1, :].copy())
+    #         print(score)
+    #         if score == 0.0:
+    #             s = np.sum(np.abs(T1 - np.eye(4)))
+    #             print(np.round(T1, 2))
+    #             exit()
+    #             print(s)
+    #
+    # print(inds_chess)
+    # print(inds_render)
+    # exit()
+
+
+    dist_mat = distance_matrix(cloud[inds_chess, :].copy(), pts3d[inds_render, :].copy())
+    row_ind, col_ind = linear_sum_assignment(dist_mat)
+
+    inds_chess = np.array(inds_chess)[row_ind]
+    inds_render = np.array(inds_render)[col_ind]
+
+    T1 = get_lr_coefs(cloud[inds_chess, :].copy(), pts3d[inds_render, :].copy())
+    cloud1 = T1.transform(cloud)
+
 
     # import matplotlib.pyplot as plt
     # plt.scatter(pts3d[:, 0], pts3d[:, 2])
-    # plt.scatter(x[:, 0], x[:, 2], c="red")
+    # plt.scatter(cloud1[:, 0], cloud1[:, 2], c="red")
     # plt.show()
     # exit()
-
-    # exit()
-    v_render = np.cross(vec_render_major, vec_render_minor)
-    v_chess = np.cross(vec_chess_major, vec_chess_minor)
-
-    # if np.dot(vec_render_major, vec_chess_major) < 0.0:
-    #     # vec_chess_major *= -1.0
-    #     inds_render = inds_render[2:] + inds_render[:2]
-    #
-    # if np.dot(vec_chess_major, vec_chess_minor) < 0.0:
-    #     vals = inds_render[1], inds_render[3]
-    #     inds_render[1] = inds_render[0]
-    #     inds_render[3] = inds_render[2]
-    #     inds_render[0] = vals[0]
-    #     inds_render[2] = vals[1]
-    #     # inds_render = inds_render[2:] + inds_render[:2]
-    # print(11111, inds_chess, inds_render)
-    # import matplotlib.pyplot as plt
-    # # plt.scatter(pts3d[:, 0], pts3d[:, 2])
-    # plt.scatter(x[:, 0], x[:, 2])
-    # plt.scatter(x[inds_chess[:2], 0], x[inds_chess[:2], 2], c="red")
-    # plt.scatter(x[inds_chess[2:], 0], x[inds_chess[2:], 2], c="green")
-    #
-    # plt.scatter(pts3d[:, 0], pts3d[:, 2])
-    # plt.scatter(pts3d[inds_render[:2], 0], pts3d[inds_render[:2], 2], c="red")
-    # plt.scatter(pts3d[inds_render[2:], 0], pts3d[inds_render[2:], 2], c="green")
-    #
-    # plt.show()
-    # exit()
-    T1 = get_lr_coefs(x[inds_chess, :].copy(), pts3d[inds_render, :].copy())
-    # x = from_homo(np.matmul(to_homo(x), T1))
-    # import matplotlib.pyplot as plt
-    # plt.scatter(pts3d[:, 0], pts3d[:, 2])
-    # plt.scatter(x[:, 0], x[:, 2], c="red")
-    # plt.show()
-    # exit()
-
 
     # nodibinu 1:1 attieciibas
-    dist_mat = distance_matrix(from_homo(np.matmul(to_homo(x), T1)), pts3d)
+    dist_mat = distance_matrix(cloud1, pts3d)
     row_ind, col_ind = linear_sum_assignment(dist_mat)
-    indices = col_ind
-    if log is not None:
-        log['indices'] = indices
+    indices = col_ind[row_ind]
 
-    T = get_lr_coefs(x, pts3d[indices, :])
+    # T = get_lr_coefs(cloud, pts3d[indices, :])
 
     # x = from_homo(np.matmul(to_homo(x), T))
     # import matplotlib.pyplot as plt
@@ -338,11 +461,7 @@ def get_chess2render_transformation(pts3d, x, log=None):
     # plt.scatter(x[:, 0], x[:, 2], c="red")
     # plt.show()
     # exit()
-
-    def f(A):
-        assert A.shape[1] == 3 and len(A.shape) == 2
-        return from_homo(np.matmul(to_homo(A), T))
-    return f, T
+    return indices
 
 
 if __name__ == "__main__":

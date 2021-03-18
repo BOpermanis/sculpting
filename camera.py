@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import pyrealsense2 as rs
+# import pyrealsense2 as rs
 from utils import normalize_t_shape, int2orb
 
 class Frame:
