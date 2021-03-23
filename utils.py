@@ -7,6 +7,7 @@ from scipy.optimize import linear_sum_assignment
 import warnings
 from itertools import product
 from sklearn.decomposition import PCA
+from PIL import Image
 
 width_perfect = 640
 height_perfect = 480
@@ -429,6 +430,31 @@ def get_chess2render_transformation(cloud, pts3d, log=None):
     indices = col_ind[row_ind]
 
     return indices
+
+
+def pts_to_screen(K, R, pts, flag_show=False):
+    if pts.shape[1] == 3:
+        pts = to_homo(pts)
+
+    if K.shape[1] == 3:
+        K = np.concatenate([K, np.zeros((3, 1))], axis=1)
+
+    pts = np.matmul(R, pts.T).T
+    pts = np.matmul(K, pts.T).T
+
+    pts = from_homo(pts)
+
+    if flag_show:
+        h, w = 480, 640
+        img = np.zeros((h, w, 3), np.uint8)
+        for x, y in pts:
+            if 0 <= x <= w and 0 <= y <= h:
+                x, y = map(int, (x, y))
+                y = h - y
+                cv2.circle(img, (x, y), 3, (0, 255, 0), 3)
+        Image.fromarray(img).show()
+        exit()
+    return pts
 
 
 if __name__ == "__main__":

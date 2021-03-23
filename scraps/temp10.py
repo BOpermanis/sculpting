@@ -9,28 +9,7 @@ from scipy.spatial.transform import Rotation
 h, w = 480, 640
 np.random.seed(0)
 
-def pts_to_screen(K, R, pts, flag_show=False):
-    if pts.shape[1] == 3:
-        pts = to_homo(pts)
 
-    if K.shape[1] == 3:
-        K = np.concatenate([K, np.zeros((3, 1))], axis=1)
-
-    pts = np.matmul(R, pts.T).T
-    pts = np.matmul(K, pts.T).T
-
-    pts = from_homo(pts)
-
-    if flag_show:
-        img = np.zeros((h, w, 3), np.uint8)
-        for x, y in pts:
-            if 0 <= x <= w and 0 <= y <= h:
-                x, y = map(int, (x, y))
-                y = h - y
-                cv2.circle(img, (x, y), 3, (0, 255, 0), 3)
-        Image.fromarray(img).show()
-        exit()
-    return pts
 
 
 def rotate_pts(R, pts):

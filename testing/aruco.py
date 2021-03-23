@@ -20,7 +20,7 @@ def make_marker():
 
 
 def track(matrix_coefficients, distortion_coefficients):
-    cap = cv2.VideoCapture(0)  # Get the camera source
+    cap = cv2.VideoCapture(1)  # Get the camera source
 
     while True:
         ret, frame = cap.read()
@@ -55,15 +55,17 @@ def track(matrix_coefficients, distortion_coefficients):
     cap.release()
     cv2.destroyAllWindows()
 
-# K = np.array([
-#     [320, 0, 320],
-#     [0, 240, 240],
-#     [0, 0, 1],
-# ], np.float32)
+s = 1.5
 K = np.array([
-    [640, 0, 320],
-    [0, 480, 240],
+    [320 * s, 0, 320],
+    [0, 240 * s, 240],
     [0, 0, 1],
 ], np.float32)
+
+# K = np.array([
+#     [640, 0, 320],
+#     [0, 480, 240],
+#     [0, 0, 1],
+# ], np.float32)
 
 track(K, np.zeros((4, 1)))
