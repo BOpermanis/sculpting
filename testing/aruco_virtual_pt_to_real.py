@@ -58,7 +58,7 @@ def render_pyramid(frame, R):
 # Image.fromarray(frame).show()
 # exit()
 
-cap = cv2.VideoCapture(1)  # Get the camera source
+cap = cv2.VideoCapture(0)  # Get the camera source
 
 while True:
     ret, frame = cap.read()
@@ -71,6 +71,7 @@ while True:
                                                             parameters=parameters,
                                                             cameraMatrix=matrix_coefficients,
                                                             distCoeff=distortion_coefficients)
+
     if np.all(ids is not None):  # If there are markers found by detector
         for i in range(0, len(ids)):  # Iterate in markers
             # Estimate pose of each marker and return the values rvec and tvec---different from camera coefficients
@@ -83,8 +84,6 @@ while True:
             R[:3, :3] = cv2.Rodrigues(rvec)[0]
             R[:3, 3] = tvec
 
-            # print(R)
-            # exit()
             render_pyramid(frame, R)
 
     aruco.drawDetectedMarkers(frame, corners)  # Draw A square around the markers

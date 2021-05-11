@@ -62,12 +62,15 @@ class HandSegmentator:
 
         depth[depth == 0] = np.nan
         avg = numpy_avg_pathches(depth, self.h1, self.w1)
+        rgb_res = 2
+        avg_rgb = numpy_avg_pathches(rgb, self.h1 // rgb_res, self.w1 // rgb_res)
+        print(avg.shape, avg_rgb.shape)
         M = np.nanmax(avg)
         avg[np.isnan(avg)] = M
 
         self.mask_on_desk = np.zeros(avg.shape, bool)
-
         avg[self.mask_on_desk] = M
+
         if self.depth_avg is None:
             self.depth_avg = avg
         else:
@@ -77,11 +80,23 @@ class HandSegmentator:
         m = avg.min()
         dists = np.abs(avg - m)
         d = 10
-        cv2.floodFill(dists, mask=None, seedPoint=(iw0, ih0), newVal=-1, loDiff=d, upDiff=d)
-        # dists = a[1]
-        # print(dists.dtype, np.sum(dists), a[3], iw0, ih0)
+
+        rgb_dists = np.linalg.norm(avg_rgb - avg_rgb[ih0 // rgb_res, iw0 // rgb_res, :], axis=2).astype(np.uint8)
+
+        cv2.floodFill(rgb_dists, mask=None, seedPoint=(iw0 // rgb_res, ih0 // rgb_res), newVal=0.0, loDiff=d, upDiff=d)
+
+        rgb_dists = cv2.resize(rgb_res, (self.w1, self.h1))
+        # dists[rgb_dists == 0] = m
+
+        cv2.floodFill(dists, mask=None, seedPoint=(iw0, ih0), newVal=0.0, loDiff=d, upDiff=d)
+
+        # dists = cv2.resize(rgb_dists, (self.w, self.h))
         dists = cv2.resize(dists, (self.w, self.h))
-        return dists < 0
+
+        # handmask = dists == 0
+        # if pts3d
+        # dists = cv2.Canny(cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY),50,100 )
+        return dists == 0, dists
 
 
 if __name__ == "__main__":
@@ -109,7 +124,7 @@ if __name__ == "__main__":
                 for kp in frame.kp_arr:
                     cv2.circle(depth, tuple(kp), 3, (0, 255, 0))
 
-        hand_mask = hand_segmentator.predict(rgb, depth, K=frame.K, plane_fun=plane_fun)
+        hand_mask, dists = hand_segmentator.predict(rgb, depth, K=frame.K, plane_fun=plane_fun)
         mask_on_desk = hand_segmentator.mask_on_desk.astype(np.uint8)
 
         mask_on_desk = cv2.resize(mask_on_desk, (depth.shape[1], depth.shape[0]), cv2.INTER_NEAREST).astype(bool)
@@ -122,8 +137,18 @@ if __name__ == "__main__":
         overlay(depth, hand_mask)
         # overlay(depth, mask_on_desk)
 
-        frame = np.concatenate([rgb, depth], axis=1)
-        # frame = depth
+        # frame = np.concatenate([rgb, depth], axis=1)
+        rgb_depth = ((depth.astype(float) / 255) * rgb).astype(np.uint8)
+        # m, M = np.min(dists), np.max(dists)
+        # dists = cv2.cvtColor((255 * (dists - m) / (M - m)).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+        dists = cv2.cvtColor(dists.astype(np.uint8), cv2.COLOR_GRAY2BGR)
+        # print(np.min(dists), np.max(dists))
+
+        frame = np.concatenate([
+            np.concatenate([rgb, depth], 1),
+            np.concatenate([rgb_depth, dists], 1)
+        ], 0)
+
         cv2.imshow('video', frame)
         if cv2.waitKey(10) == 27:
             break

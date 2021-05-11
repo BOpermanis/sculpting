@@ -258,9 +258,14 @@ def numpy_avg_pathches_search(img, h1, w1, reshape_fun, avg_fun):
 
 def numpy_avg_pathches(img, h1, w1):
     h, w = img.shape[:2]
+    flag_rgb = len(img.shape) == 3
     assert h % h1 == 0 and w % w1 == 0 and h // h1 == w // w1
     window = h // h1
-    img = np.reshape(img, (h1, window, w1, window))
+
+    if flag_rgb:
+        img = np.reshape(img, (h1, window, w1, window, 3))
+    else:
+        img = np.reshape(img, (h1, window, w1, window))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         img = np.nanmean(img, (1, 3))

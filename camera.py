@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-# import pyrealsense2 as rs
 from utils import normalize_t_shape, int2orb
 
 class Frame:
@@ -40,9 +39,9 @@ class Frame:
             self.cloud_kp[new_inds_for_old] = prev_cloud_kp
 
 
+import pyrealsense2 as rs
 class RsCamera:
     def __init__(self, flag_return_with_features=0):
-
         self.orb_params = dict(
             nfeatures=600,
             scaleFactor=1.2,
@@ -67,6 +66,7 @@ class RsCamera:
         config.enable_stream(rs.stream.color, self.width, self.height, rs.format.bgr8, 30)
         config.enable_stream(rs.stream.infrared, 1, self.width, self.height, rs.format.y8, 30)
         # config.enable_stream(rs.stream.infrared, 2, self.width, self.height, rs.format.y8, 30)
+
         cfg = self.pipeline.start(config)
         profile = cfg.get_stream(rs.stream.depth)  # Fetch stream profile for depth stream
         self.intr = profile.as_video_stream_profile().get_intrinsics()
@@ -133,11 +133,19 @@ class RsCamera:
         infra_frame = frames.get_infrared_frame()
 
         depth_image = np.asanyarray(depth_frame.get_data())
+
         frame = np.asanyarray(color_frame.get_data())
-        infra_frame = np.asanyarray(infra_frame.get_data())
-        infra_frame = cv2.cvtColor(infra_frame, cv2.COLOR_GRAY2BGR)
-        # print(frame.shape, frame.dtype)
-        # exit()
+        # infra_frame = np.asanyarray(infra_frame.get_data())
+        # frame = cv2.cvtColor(infra_frame, cv2.COLOR_GRAY2BGR)
+
+        ## transformation for better depth rgb correspondance for close objects
+        M = np.array([
+            [1.57, 0, -140],
+            [0, 1.6,  -150],
+        ])
+        cv2.warpAffine(depth_image, M, (frame.shape[1], frame.shape[0]),
+                       dst=depth_image, flags=cv2.INTER_NEAREST)
+        # print(np.average(depth_image))
         des, kp_arr, kp = None, None, None
         if self.flag_return_with_features == 1:
             kp, des = self.feature_extractor.detectAndCompute(frame, mask=(depth_image > 0).astype(np.uint8) * 255)
@@ -174,7 +182,7 @@ class RsCamera:
 if __name__ == "__main__":
     # import matplotlib.pyplot as plt
 
-    cap = RsCamera(flag_return_with_features=2)
+    cap = RsCamera(flag_return_with_features=0)
     i_frame = 0
     while True:
         i_frame += 1
@@ -190,6 +198,6 @@ if __name__ == "__main__":
         if frame.kp_arr is not None:
             for kp in frame.kp_arr:
                 cv2.circle(frame.rgb, tuple(kp), 3, (0, 255, 0))
-        cv2.imshow('my webcam', frame.rgb)
+        cv2.imshow('my webcam', frame.depth)
         if cv2.waitKey(1) == 27:
             break  # esc to quit
